@@ -186,6 +186,16 @@ button:hover {
   background: rgba(30, 62, 92, 0.98);
 }
 
+.phone-help {
+  margin: 10px auto 0;
+  max-width: 88%;
+  color: #dfefff;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  text-align: center;
+  opacity: 0.9;
+}
+
 .phone-error {
   margin: 14px auto 0;
   max-width: 88%;

@@ -318,16 +318,25 @@ function requestVibrationPermission() {
   }
 
   try {
-    const success = navigator.vibrate(20);
-    vibrationPermissionGranted = true;
-    if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('振動を許可しました。次から斬撃時に振動します。');
+    const success = navigator.vibrate([40, 30, 40]);
+    const isSupported = typeof success === 'boolean' ? success : true;
+    vibrationPermissionGranted = isSupported;
+
+    if (isSupported) {
+      if (typeof window.showPhoneError === 'function') {
+        window.showPhoneError('振動をテストしました。iPhoneでは個別の許可ダイアログは出ず、ボタン操作で振動します。');
+      }
+    } else {
+      if (typeof window.showPhoneError === 'function') {
+        window.showPhoneError('振動を実行できませんでした。ブラウザ設定を確認してください。');
+      }
     }
-    console.log('vibration permission granted via user gesture', success);
+
+    console.log('vibration test result', success);
   } catch (error) {
     console.error('vibration permission failed:', error);
     if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('振動の許可に失敗しました。');
+      window.showPhoneError('振動のテスト中にエラーが発生しました。');
     }
   }
 }
