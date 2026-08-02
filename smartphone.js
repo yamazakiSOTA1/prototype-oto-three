@@ -9,8 +9,8 @@ let lastSlashTime = 0;
 let uiBound = false;
 
 // tuning constants
-const SHAKE_THRESHOLD = 12; // acceleration magnitude threshold
-const COOLDOWN_MS = 800; // ms between allowed slashes
+const SHAKE_THRESHOLD = 15; // acceleration magnitude threshold
+const COOLDOWN_MS = 700; // ms between allowed slashes
 const MAX_SPEED = 1.5; // clamp for normalized speed
   // Create audio element and explicitly set src/load to improve diagnostics
   smartphoneAudio = new Audio();
@@ -205,7 +205,9 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
 
 function requestMotionPermissionIfNeeded() {
   if (typeof DeviceMotionEvent === 'undefined') {
-    alert('このブラウザはDeviceMotion APIに対応していません。');
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError('この端末では振動検出が利用できません。');
+    }
     return;
   }
 
@@ -215,12 +217,16 @@ function requestMotionPermissionIfNeeded() {
         if (permissionState === 'granted') {
           startMotionListener();
         } else {
-          alert('モーションアクセスが拒否されました。設定から許可してください。');
+          if (typeof window.showPhoneError === 'function') {
+            window.showPhoneError('モーション許可が拒否されました。設定から許可してください。');
+          }
         }
       })
       .catch((error) => {
         console.error('Motion permission error:', error);
-        startMotionListener();
+        if (typeof window.showPhoneError === 'function') {
+          window.showPhoneError('モーション許可の取得に失敗しました。');
+        }
       });
   } else {
     startMotionListener();
@@ -234,10 +240,13 @@ function startMotionListener() {
 
   window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
   isMotionActive = true;
+  if (typeof window.showPhoneError === 'function') {
+    window.showPhoneError('モーション検出を開始しました。スマホを振ってください。');
+  }
 }
 
 function handleDeviceMotion(event) {
-  const acceleration = event.acceleration || event.accelerationIncludingGravity;
+  const acceleration = event.accelerationIncludingGravity || event.acceleration;
   if (!acceleration) {
     return;
   }
@@ -245,14 +254,11 @@ function handleDeviceMotion(event) {
   const x = acceleration.x || 0;
   const y = acceleration.y || 0;
   const z = acceleration.z || 0;
-
   const magnitude = Math.sqrt(x * x + y * y + z * z);
   const now = Date.now();
-  const normalizedSpeed = normalizeSpeed(magnitude);
-  const angle = computeAngle(x, y);
 
-  currentAngle = angle;
-  currentSpeed = normalizedSpeed;
+  currentAngle = computeAngle(x, y);
+  currentSpeed = normalizeSpeed(magnitude);
 
   smartphoneUpdateVisual(currentSpeed, currentAngle);
 
