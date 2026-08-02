@@ -367,21 +367,28 @@ function simulateSlashDebug(angle, speed) {
 }
 
 function requestVibrationPermission() {
-  if (!('vibrate' in navigator)) {
+  const vibrateFn = navigator.vibrate || null;
+  console.log('vibration support check', {
+    hasNavigator: !!navigator,
+    hasVibrate: typeof vibrateFn === 'function',
+    userAgent: navigator.userAgent,
+  });
+
+  if (typeof vibrateFn !== 'function') {
     if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('この端末では振動に対応していません。');
+      window.showPhoneError('このブラウザでは振動 API が使えません。');
     }
     return;
   }
 
   try {
-    const success = navigator.vibrate([40, 30, 40]);
+    const success = vibrateFn.call(navigator, [40, 30, 40]);
     const isSupported = typeof success === 'boolean' ? success : true;
     vibrationPermissionGranted = isSupported;
 
     if (isSupported) {
       if (typeof window.showPhoneError === 'function') {
-        window.showPhoneError('振動をテストしました。iPhoneでは個別の許可ダイアログは出ず、ボタン操作で振動します。');
+        window.showPhoneError('振動をテストしました。もし振動しなければ、ブラウザの制限を確認してください。');
       }
     } else {
       if (typeof window.showPhoneError === 'function') {
@@ -399,11 +406,16 @@ function requestVibrationPermission() {
 }
 
 function triggerPhoneVibration(speed) {
-  if (!vibrationPermissionGranted || !navigator.vibrate) {
+  const vibrateFn = navigator.vibrate || null;
+  if (!vibrateFn || !vibrationPermissionGranted) {
     return;
   }
 
   const duration = 30 + Math.round(speed * 70);
   const pattern = [duration, 20, Math.max(10, duration - 10)];
-  navigator.vibrate(pattern);
+  try {
+    vibrateFn.call(navigator, pattern);
+  } catch (error) {
+    console.warn('vibrate call failed:', error);
+  }
 }
