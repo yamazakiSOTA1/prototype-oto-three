@@ -10,10 +10,11 @@ let vibrationPermissionGranted = false;
 let audioUnlocked = false;
 let audioContext = null;
 let masterGain = null;
+let listening = false;
 
 // tuning constants
-const SHAKE_THRESHOLD = 8; // acceleration magnitude threshold
-const COOLDOWN_MS = 450; // ms between allowed slashes
+const SHAKE_THRESHOLD = 15; // acceleration magnitude threshold
+const COOLDOWN_MS = 700; // ms between allowed slashes
 const MAX_SPEED = 1.5; // clamp for normalized speed
   // Create audio element and explicitly set src/load to improve diagnostics
   smartphoneAudio = new Audio();
@@ -229,6 +230,13 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
         });
       }
 
+      const startMotionButton = document.getElementById('startMotionButton');
+      if (startMotionButton) {
+        startMotionButton.addEventListener('click', () => {
+          requestMotionPermissionIfNeeded();
+        });
+      }
+
       window.smartphoneUpdateVisual = (speed, angle) => { updatePhoneEffect(speed, angle); flashScreen(); };
       window.showPhoneError = showPhoneError;
     } catch (e) {
@@ -245,7 +253,9 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
 
 function requestMotionPermissionIfNeeded() {
   if (typeof DeviceMotionEvent === 'undefined') {
-    alert('このブラウザはDeviceMotion APIに対応していません。');
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError('この端末では振動検出が利用できません。');
+    }
     return;
   }
 
@@ -255,12 +265,16 @@ function requestMotionPermissionIfNeeded() {
         if (permissionState === 'granted') {
           startMotionListener();
         } else {
-          alert('モーションアクセスが拒否されました。設定から許可してください。');
+          if (typeof window.showPhoneError === 'function') {
+            window.showPhoneError('モーション許可が拒否されました。設定から許可してください。');
+          }
         }
       })
       .catch((error) => {
         console.error('Motion permission error:', error);
-        startMotionListener();
+        if (typeof window.showPhoneError === 'function') {
+          window.showPhoneError('モーション許可の取得に失敗しました。');
+        }
       });
   } else {
     startMotionListener();
@@ -268,16 +282,20 @@ function requestMotionPermissionIfNeeded() {
 }
 
 function startMotionListener() {
-  if (isMotionActive) {
+  if (listening) {
     return;
   }
 
   window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+  listening = true;
   isMotionActive = true;
+  if (typeof window.showPhoneError === 'function') {
+    window.showPhoneError('モーション検出を開始しました。スマホを振ってください。');
+  }
 }
 
 function handleDeviceMotion(event) {
-  const acceleration = event.acceleration || event.accelerationIncludingGravity;
+  const acceleration = event.accelerationIncludingGravity || event.acceleration;
   if (!acceleration) {
     return;
   }
