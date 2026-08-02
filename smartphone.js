@@ -8,8 +8,6 @@ let isMotionActive = false;
 let lastSlashTime = 0;
 let vibrationPermissionGranted = false;
 let audioUnlocked = false;
-let audioContext = null;
-let masterGain = null;
 let listening = false;
 
 // tuning constants
@@ -76,43 +74,6 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
     }
   }
 
-  function ensureAudioContext() {
-    if (!audioContext) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) {
-        console.warn('Web Audio API is not supported');
-        return null;
-      }
-      audioContext = new AudioCtx();
-      masterGain = audioContext.createGain();
-      masterGain.gain.value = 0.18;
-      masterGain.connect(audioContext.destination);
-    }
-    return audioContext;
-  }
-
-  function playFallbackTone(speed) {
-    const ctx = ensureAudioContext();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-
-    const now = ctx.currentTime;
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(620 + speed * 480, now);
-    oscillator.frequency.exponentialRampToValueAtTime(180, now + 0.2);
-    gainNode.gain.setValueAtTime(0.0001, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    oscillator.connect(gainNode);
-    gainNode.connect(masterGain || ctx.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.24);
-  }
-
   function emitPhoneMessage(message) {
     if (typeof window.showPhoneError === 'function') {
       window.showPhoneError(message);
@@ -124,10 +85,6 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
   function enablePhoneAudio() {
     try {
       ensureAudioPrepared();
-      ensureAudioContext();
-      if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume().catch(() => {});
-      }
 
       if (!smartphoneAudio) {
         emitPhoneMessage('オーディオ要素の準備に失敗しました');
@@ -145,10 +102,9 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
           smartphoneAudio.volume = originalVolume;
           emitPhoneMessage('音声が有効化されました');
         }).catch((err) => {
-          console.warn('audio unlock via play() failed, falling back to tone:', err);
+          console.warn('audio unlock via play() failed:', err);
           audioUnlocked = true;
-          playFallbackTone(0.9);
-          emitPhoneMessage('音声を有効化しました。代替トーンで再生します。');
+          emitPhoneMessage('音声の有効化に失敗しました。再生はそのまま試行します。');
         });
       } else {
         audioUnlocked = true;
@@ -345,9 +301,8 @@ function sendSlashEvent(angle, speed, timestamp) {
 
 function playSlashStartSound(speed) {
   ensureAudioPrepared();
-  ensureAudioContext();
 
-  if (audioUnlocked && smartphoneAudio) {
+  if (smartphoneAudio) {
     smartphoneAudio.volume = 0.35 + speed * 0.6;
     try {
       smartphoneAudio.currentTime = 0;
@@ -362,13 +317,10 @@ function playSlashStartSound(speed) {
         console.log('slash_start.mp3 再生開始');
       }).catch((error) => {
         console.error('slash_start.mp3 再生エラー:', error);
-        playFallbackTone(speed);
       });
     } else {
       console.log('play() did not return a promise. audio.readyState=', smartphoneAudio.readyState);
     }
-  } else {
-    playFallbackTone(speed);
   }
 
   triggerPhoneVibration(speed);
