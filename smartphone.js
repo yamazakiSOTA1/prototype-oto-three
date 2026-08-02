@@ -6,6 +6,7 @@ let currentAngle = 0;
 let currentSpeed = 0;
 let isMotionActive = false;
 let lastSlashTime = 0;
+let uiBound = false;
 
 // tuning constants
 const SHAKE_THRESHOLD = 12; // acceleration magnitude threshold
@@ -79,6 +80,10 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
   }
 
   function bindUiElements() {
+    if (uiBound) {
+      return;
+    }
+
     console.log('bindUiElements start');
     try {
       const phoneFlash = document.getElementById('phoneFlash');
@@ -169,8 +174,16 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
         });
       }
 
+      const startMotionButton = document.getElementById('startMotionButton');
+      if (startMotionButton) {
+        startMotionButton.addEventListener('click', () => {
+          requestMotionPermissionIfNeeded();
+        });
+      }
+
       window.smartphoneUpdateVisual = (speed, angle) => { updatePhoneEffect(speed, angle); flashScreen(); };
       window.showPhoneError = showPhoneError;
+      uiBound = true;
     } catch (e) {
       console.error('bindUiElements error:', e);
       const debugButtonFallback = document.getElementById('debugTriggerButton');
@@ -180,8 +193,15 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
     }
   }
 
+  function initSmartphoneApp() {
+    ensureAudioPrepared();
+    bindUiElements();
+  }
+
+  window.initSmartphoneApp = initSmartphoneApp;
+
   // initialize UI bindings immediately
-  try { bindUiElements(); } catch (e) { console.error('bindUiElements init failed:', e); }
+  try { initSmartphoneApp(); } catch (e) { console.error('bindUiElements init failed:', e); }
 
 function requestMotionPermissionIfNeeded() {
   if (typeof DeviceMotionEvent === 'undefined') {
