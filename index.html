@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>斬撃連携インタラクション</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="selector" class="scene active">
+    <div class="panel">
+      <h1>斬撃デバイスを選択</h1>
+      <div class="button-group">
+        <button id="chooseSmartphone">スマホ</button>
+        <button id="choosePc">PC</button>
+      </div>
+      <p class="hint">同じFirebaseプロジェクトをスマホとPCで共有してください。</p>
+    </div>
+  </div>
+
+  <div id="smartphoneScreen" class="scene">
+    <div class="phone-ui">
+      <div class="status-bar">
+        <span>スマホモード</span>
+      </div>
+      <div class="light-stage">
+        <div id="lightWave" class="light-wave"></div>
+        <div id="lightBurst" class="light-burst"></div>
+      </div>
+      <div class="screen-label">振って斬撃を送信</div>
+      <div class="info-panel">
+        <div class="info-row"><strong>角度:</strong> <span id="angleValue">0°</span></div>
+        <div class="info-row"><strong>強さ:</strong> <span id="speedValue">0.00</span></div>
+      </div>
+      <div class="debug-controls">
+          <button id="debugTriggerButton" class="debug-button">デバッグ: 振る判定を送信</button>
+          <button id="enableAudioButton" class="debug-button">音声を有効化</button>
+      </div>
+      <div id="phoneError" class="phone-error" aria-live="polite"></div>
+      <div id="phoneFlash" class="phone-flash"></div>
+    </div>
+  </div>
+
+  <div id="pcScreen" class="scene">
+    <canvas id="pcCanvas"></canvas>
+    <div id="pcOverlay" class="pc-overlay"></div>
+    <div id="pcHint" class="pc-hint">PCモード: 斬撃受信待ち</div>
+    <div id="connectionStatus" class="pc-hint" style="font-size: 0.9rem; margin-top: 0.5rem;">接続状態: 初期化中</div>
+    <div class="pc-debug-area">
+      <div id="pcDebug" class="pc-debug">デバッグ情報: 受信なし</div>
+      <button id="pcDebugButton" class="debug-button">デバッグ: 受信演出を再生</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.31.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.31.0/firebase-database-compat.js"></script>
+  <script src="firebase.js"></script>
+  <script src="effects.js"></script>
+  <script src="smartphone.js"></script>
+  <script src="pc.js"></script>
+  <script>
+    const selector = document.getElementById('selector');
+    const smartphoneScreen = document.getElementById('smartphoneScreen');
+    const pcScreen = document.getElementById('pcScreen');
+
+    function showScene(sceneId) {
+      document.querySelectorAll('.scene').forEach((scene) => {
+        scene.classList.remove('active');
+      });
+      document.getElementById(sceneId).classList.add('active');
+    }
+
+    document.getElementById('chooseSmartphone').addEventListener('click', () => {
+      showScene('smartphoneScreen');
+      if (typeof initSmartphoneApp === 'function') {
+        initSmartphoneApp();
+      }
+    });
+
+    document.getElementById('choosePc').addEventListener('click', () => {
+      showScene('pcScreen');
+      if (typeof initPcApp === 'function') {
+        initPcApp();
+      }
+    });
+  </script>
+</body>
+</html>
