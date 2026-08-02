@@ -7,6 +7,9 @@ let currentSpeed = 0;
 let isMotionActive = false;
 let lastSlashTime = 0;
 let vibrationPermissionGranted = false;
+let audioUnlocked = false;
+let audioContext = null;
+let masterGain = null;
 
 // tuning constants
 const SHAKE_THRESHOLD = 8; // acceleration magnitude threshold
@@ -72,6 +75,93 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
     }
   }
 
+  function ensureAudioContext() {
+    if (!audioContext) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        console.warn('Web Audio API is not supported');
+        return null;
+      }
+      audioContext = new AudioCtx();
+      masterGain = audioContext.createGain();
+      masterGain.gain.value = 0.18;
+      masterGain.connect(audioContext.destination);
+    }
+    return audioContext;
+  }
+
+  function playFallbackTone(speed) {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(620 + speed * 480, now);
+    oscillator.frequency.exponentialRampToValueAtTime(180, now + 0.2);
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.connect(gainNode);
+    gainNode.connect(masterGain || ctx.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.24);
+  }
+
+  function emitPhoneMessage(message) {
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError(message);
+    } else {
+      console.log(message);
+    }
+  }
+
+  function enablePhoneAudio() {
+    try {
+      ensureAudioPrepared();
+      ensureAudioContext();
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => {});
+      }
+
+      if (!smartphoneAudio) {
+        emitPhoneMessage('オーディオ要素の準備に失敗しました');
+        return;
+      }
+
+      const originalVolume = smartphoneAudio.volume;
+      try { smartphoneAudio.volume = 0.01; } catch (e) { console.warn('could not set temp volume', e); }
+      const p = smartphoneAudio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
+          audioUnlocked = true;
+          smartphoneAudio.pause();
+          smartphoneAudio.currentTime = 0;
+          smartphoneAudio.volume = originalVolume;
+          emitPhoneMessage('音声が有効化されました');
+        }).catch((err) => {
+          console.warn('audio unlock via play() failed, falling back to tone:', err);
+          audioUnlocked = true;
+          playFallbackTone(0.9);
+          emitPhoneMessage('音声を有効化しました。代替トーンで再生します。');
+        });
+      } else {
+        audioUnlocked = true;
+        smartphoneAudio.pause();
+        smartphoneAudio.currentTime = 0;
+        smartphoneAudio.volume = originalVolume;
+        emitPhoneMessage('音声が有効化されました');
+      }
+    } catch (e) {
+      console.error('enablePhoneAudio error:', e);
+      emitPhoneMessage('音声の有効化中にエラーが発生しました');
+    }
+  }
+
   function bindUiElements() {
     console.log('bindUiElements start');
     try {
@@ -128,37 +218,7 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
       if (enableAudioButton) {
         enableAudioButton.addEventListener('click', () => {
           console.log('enableAudioButton clicked — attempting to unlock audio');
-          try {
-            ensureAudioPrepared();
-            if (!smartphoneAudio) {
-              showPhoneError('オーディオ要素の準備に失敗しました');
-              return;
-            }
-            const originalVolume = smartphoneAudio.volume;
-            try { smartphoneAudio.volume = 0.01; } catch (e) { console.warn('could not set temp volume', e); }
-            const p = smartphoneAudio.play();
-            if (p && typeof p.then === 'function') {
-              p.then(() => {
-                console.log('audio unlocked via play()');
-                smartphoneAudio.pause();
-                smartphoneAudio.currentTime = 0;
-                smartphoneAudio.volume = originalVolume;
-                showPhoneError('音声が有効化されました');
-              }).catch((err) => {
-                console.error('unlock via play() failed:', err);
-                showPhoneError('音声の有効化に失敗しました');
-              });
-            } else {
-              console.log('play() returned no promise, assuming unlocked');
-              smartphoneAudio.pause();
-              smartphoneAudio.currentTime = 0;
-              smartphoneAudio.volume = originalVolume;
-              showPhoneError('音声が有効化されました');
-            }
-          } catch (e) {
-            console.error('enableAudioButton handler error:', e);
-            showPhoneError('音声の有効化中にエラーが発生しました');
-          }
+          enablePhoneAudio();
         });
       }
 
@@ -266,34 +326,31 @@ function sendSlashEvent(angle, speed, timestamp) {
 }
 
 function playSlashStartSound(speed) {
-  if (!smartphoneAudio) {
-    return;
-  }
+  ensureAudioPrepared();
+  ensureAudioContext();
 
-  smartphoneAudio.volume = 0.35 + speed * 0.6;
-  // seek to start for immediate playback
-  try {
-    smartphoneAudio.currentTime = 0;
-  } catch (e) {
-    console.warn('could not set currentTime on audio:', e);
-  }
+  if (audioUnlocked && smartphoneAudio) {
+    smartphoneAudio.volume = 0.35 + speed * 0.6;
+    try {
+      smartphoneAudio.currentTime = 0;
+    } catch (e) {
+      console.warn('could not set currentTime on audio:', e);
+    }
 
-  console.log('Attempting to play slash_start.mp3, volume=', smartphoneAudio.volume);
-  const playPromise = smartphoneAudio.play();
-  if (playPromise && typeof playPromise.then === 'function') {
-    playPromise.then(() => {
-      console.log('slash_start.mp3 再生開始');
-      if (typeof window.showPhoneError === 'function') {
-        window.showPhoneError('サウンド再生: 成功');
-      }
-    }).catch((error) => {
-      console.error('slash_start.mp3 再生エラー:', error);
-      if (typeof window.showPhoneError === 'function') {
-        window.showPhoneError('音声再生に失敗しました。ブラウザの設定を確認してください。');
-      }
-    });
+    console.log('Attempting to play slash_start.mp3, volume=', smartphoneAudio.volume);
+    const playPromise = smartphoneAudio.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      playPromise.then(() => {
+        console.log('slash_start.mp3 再生開始');
+      }).catch((error) => {
+        console.error('slash_start.mp3 再生エラー:', error);
+        playFallbackTone(speed);
+      });
+    } else {
+      console.log('play() did not return a promise. audio.readyState=', smartphoneAudio.readyState);
+    }
   } else {
-    console.log('play() did not return a promise. audio.readyState=', smartphoneAudio.readyState);
+    playFallbackTone(speed);
   }
 
   triggerPhoneVibration(speed);
