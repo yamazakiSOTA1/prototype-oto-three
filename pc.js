@@ -118,9 +118,7 @@ function handleSlashEvent(eventData) {
       hint.style.color = '';
     }, 450);
   }
-  setTimeout(() => {
-    triggerPcVisual(eventData);
-  }, 120);
+  triggerPcVisual(eventData);
 }
 
 function triggerPcVisual(eventData) {

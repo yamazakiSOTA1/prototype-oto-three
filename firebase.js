@@ -156,6 +156,8 @@ function subscribeSlashEvents(callback) {
 
 function subscribeSlashEventsViaRest(callback) {
   const endpoint = `${firebaseConfig.databaseURL}/slashEvent.json`;
+  let lastHandledTimestamp = 0;
+
   const poll = () => {
     fetch(endpoint)
       .then(async (response) => {
@@ -170,16 +172,19 @@ function subscribeSlashEventsViaRest(callback) {
         if (!data) {
           return;
         }
-        const latestEvent = Object.values(data).reduce((latest, current) => {
-          if (!latest || current.timestamp > latest.timestamp) {
-            return current;
-          }
-          return latest;
-        }, null);
 
-        if (latestEvent) {
-          callback(latestEvent);
+        const events = Object.values(data).filter((current) => {
+          return current && current.timestamp && current.timestamp > lastHandledTimestamp;
+        });
+
+        if (!events.length) {
+          return;
         }
+
+        events.sort((a, b) => a.timestamp - b.timestamp);
+        const latestEvent = events[events.length - 1];
+        lastHandledTimestamp = latestEvent.timestamp;
+        callback(latestEvent);
       })
       .catch((error) => {
         console.warn('Firebase REST fallback poll failed.', error);
@@ -187,5 +192,5 @@ function subscribeSlashEventsViaRest(callback) {
   };
 
   poll();
-  window.setInterval(poll, 1000);
+  window.setInterval(poll, 250);
 }

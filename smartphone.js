@@ -6,13 +6,10 @@ let currentAngle = 0;
 let currentSpeed = 0;
 let isMotionActive = false;
 let lastSlashTime = 0;
-let vibrationPermissionGranted = false;
-let audioUnlocked = false;
-let listening = false;
 
 // tuning constants
-const SHAKE_THRESHOLD = 15; // acceleration magnitude threshold
-const COOLDOWN_MS = 700; // ms between allowed slashes
+const SHAKE_THRESHOLD = 12; // acceleration magnitude threshold
+const COOLDOWN_MS = 800; // ms between allowed slashes
 const MAX_SPEED = 1.5; // clamp for normalized speed
   // Create audio element and explicitly set src/load to improve diagnostics
   smartphoneAudio = new Audio();
@@ -58,10 +55,16 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
   smartphoneAudio.addEventListener('loadedmetadata', () => {
     console.log('smartphoneAudio loadedmetadata duration=', smartphoneAudio.duration);
   });
+  smartphoneAudio.addEventListener('play', () => {
+    console.log('smartphoneAudio play event fired');
+  });
+
+  let audioPrepared = false;
+  let audioUnlockAttempted = false;
 
   function ensureAudioPrepared() {
     try {
-      if (smartphoneAudio && smartphoneAudio.src) return;
+      if (audioPrepared && smartphoneAudio && smartphoneAudio.src) return;
       if (!smartphoneAudio) smartphoneAudio = new Audio();
       const absolute = new URL(srcPath, location.href).href;
       try { smartphoneAudio.src = absolute; } catch (e) { smartphoneAudio.setAttribute && smartphoneAudio.setAttribute('src', absolute); }
@@ -69,53 +72,9 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
       smartphoneAudio.style.display = 'none';
       if (document.body && !document.body.contains(smartphoneAudio)) document.body.appendChild(smartphoneAudio);
       if (typeof smartphoneAudio.load === 'function') smartphoneAudio.load();
+      audioPrepared = true;
     } catch (e) {
       console.warn('ensureAudioPrepared failed:', e);
-    }
-  }
-
-  function emitPhoneMessage(message) {
-    if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError(message);
-    } else {
-      console.log(message);
-    }
-  }
-
-  function enablePhoneAudio() {
-    try {
-      ensureAudioPrepared();
-
-      if (!smartphoneAudio) {
-        emitPhoneMessage('オーディオ要素の準備に失敗しました');
-        return;
-      }
-
-      const originalVolume = smartphoneAudio.volume;
-      try { smartphoneAudio.volume = 0.01; } catch (e) { console.warn('could not set temp volume', e); }
-      const p = smartphoneAudio.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => {
-          audioUnlocked = true;
-          smartphoneAudio.pause();
-          smartphoneAudio.currentTime = 0;
-          smartphoneAudio.volume = originalVolume;
-          emitPhoneMessage('音声が有効化されました');
-        }).catch((err) => {
-          console.warn('audio unlock via play() failed:', err);
-          audioUnlocked = true;
-          emitPhoneMessage('音声の有効化に失敗しました。再生はそのまま試行します。');
-        });
-      } else {
-        audioUnlocked = true;
-        smartphoneAudio.pause();
-        smartphoneAudio.currentTime = 0;
-        smartphoneAudio.volume = originalVolume;
-        emitPhoneMessage('音声が有効化されました');
-      }
-    } catch (e) {
-      console.error('enablePhoneAudio error:', e);
-      emitPhoneMessage('音声の有効化中にエラーが発生しました');
     }
   }
 
@@ -175,21 +134,38 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
       if (enableAudioButton) {
         enableAudioButton.addEventListener('click', () => {
           console.log('enableAudioButton clicked — attempting to unlock audio');
-          enablePhoneAudio();
-        });
-      }
-
-      const requestVibrationButton = document.getElementById('requestVibrationButton');
-      if (requestVibrationButton) {
-        requestVibrationButton.addEventListener('click', () => {
-          requestVibrationPermission();
-        });
-      }
-
-      const startMotionButton = document.getElementById('startMotionButton');
-      if (startMotionButton) {
-        startMotionButton.addEventListener('click', () => {
-          requestMotionPermissionIfNeeded();
+          try {
+            ensureAudioPrepared();
+            if (!smartphoneAudio) {
+              showPhoneError('オーディオ要素の準備に失敗しました');
+              return;
+            }
+            const originalVolume = smartphoneAudio.volume;
+            audioUnlockAttempted = true;
+            try { smartphoneAudio.volume = 0.01; } catch (e) { console.warn('could not set temp volume', e); }
+            const p = smartphoneAudio.play();
+            if (p && typeof p.then === 'function') {
+              p.then(() => {
+                console.log('audio unlocked via play()');
+                smartphoneAudio.pause();
+                smartphoneAudio.currentTime = 0;
+                smartphoneAudio.volume = originalVolume;
+                showPhoneError('音声が有効化されました');
+              }).catch((err) => {
+                console.error('unlock via play() failed:', err);
+                showPhoneError('音声の有効化に失敗しました');
+              });
+            } else {
+              console.log('play() returned no promise, assuming unlocked');
+              smartphoneAudio.pause();
+              smartphoneAudio.currentTime = 0;
+              smartphoneAudio.volume = originalVolume;
+              showPhoneError('音声が有効化されました');
+            }
+          } catch (e) {
+            console.error('enableAudioButton handler error:', e);
+            showPhoneError('音声の有効化中にエラーが発生しました');
+          }
         });
       }
 
@@ -209,9 +185,7 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
 
 function requestMotionPermissionIfNeeded() {
   if (typeof DeviceMotionEvent === 'undefined') {
-    if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('この端末では振動検出が利用できません。');
-    }
+    alert('このブラウザはDeviceMotion APIに対応していません。');
     return;
   }
 
@@ -221,16 +195,12 @@ function requestMotionPermissionIfNeeded() {
         if (permissionState === 'granted') {
           startMotionListener();
         } else {
-          if (typeof window.showPhoneError === 'function') {
-            window.showPhoneError('モーション許可が拒否されました。設定から許可してください。');
-          }
+          alert('モーションアクセスが拒否されました。設定から許可してください。');
         }
       })
       .catch((error) => {
         console.error('Motion permission error:', error);
-        if (typeof window.showPhoneError === 'function') {
-          window.showPhoneError('モーション許可の取得に失敗しました。');
-        }
+        startMotionListener();
       });
   } else {
     startMotionListener();
@@ -238,20 +208,16 @@ function requestMotionPermissionIfNeeded() {
 }
 
 function startMotionListener() {
-  if (listening) {
+  if (isMotionActive) {
     return;
   }
 
   window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
-  listening = true;
   isMotionActive = true;
-  if (typeof window.showPhoneError === 'function') {
-    window.showPhoneError('モーション検出を開始しました。スマホを振ってください。');
-  }
 }
 
 function handleDeviceMotion(event) {
-  const acceleration = event.accelerationIncludingGravity || event.acceleration;
+  const acceleration = event.acceleration || event.accelerationIncludingGravity;
   if (!acceleration) {
     return;
   }
@@ -277,7 +243,7 @@ function handleDeviceMotion(event) {
 }
 
 function normalizeSpeed(magnitude) {
-  const raw = Math.max(0, magnitude - SHAKE_THRESHOLD) / 15;
+  const raw = (magnitude - SHAKE_THRESHOLD) / 20;
   return Math.min(MAX_SPEED, Math.max(0, raw));
 }
 
@@ -302,25 +268,30 @@ function sendSlashEvent(angle, speed, timestamp) {
 function playSlashStartSound(speed) {
   ensureAudioPrepared();
 
-  if (smartphoneAudio) {
-    smartphoneAudio.volume = 0.35 + speed * 0.6;
-    try {
-      smartphoneAudio.currentTime = 0;
-    } catch (e) {
-      console.warn('could not set currentTime on audio:', e);
-    }
+  if (!smartphoneAudio) {
+    return;
+  }
 
-    console.log('Attempting to play slash_start.mp3, volume=', smartphoneAudio.volume);
-    const playPromise = smartphoneAudio.play();
-    if (playPromise && typeof playPromise.then === 'function') {
-      playPromise.then(() => {
-        console.log('slash_start.mp3 再生開始');
-      }).catch((error) => {
-        console.error('slash_start.mp3 再生エラー:', error);
-      });
-    } else {
-      console.log('play() did not return a promise. audio.readyState=', smartphoneAudio.readyState);
-    }
+  try {
+    smartphoneAudio.volume = 0.35 + speed * 0.6;
+    smartphoneAudio.currentTime = 0;
+  } catch (e) {
+    console.warn('could not reset audio currentTime:', e);
+  }
+
+  console.log('Attempting to play slash_start.mp3, volume=', smartphoneAudio.volume, 'readyState=', smartphoneAudio.readyState);
+  const playPromise = smartphoneAudio.play();
+  if (playPromise && typeof playPromise.then === 'function') {
+    playPromise.then(() => {
+      console.log('slash_start.mp3 再生開始');
+    }).catch((error) => {
+      console.error('slash_start.mp3 再生エラー:', error);
+      if (typeof window.showPhoneError === 'function') {
+        window.showPhoneError('音声再生に失敗しました。ブラウザの設定を確認してください。');
+      }
+    });
+  } else {
+    console.log('play() did not return a promise. audio.readyState=', smartphoneAudio.readyState);
   }
 
   triggerPhoneVibration(speed);
@@ -336,56 +307,12 @@ function simulateSlashDebug(angle, speed) {
   sendSlashEvent(angle, speed, Date.now());
 }
 
-function requestVibrationPermission() {
-  const vibrateFn = navigator.vibrate || null;
-  console.log('vibration support check', {
-    hasNavigator: !!navigator,
-    hasVibrate: typeof vibrateFn === 'function',
-    userAgent: navigator.userAgent,
-  });
-
-  if (typeof vibrateFn !== 'function') {
-    if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('このブラウザでは振動 API が使えません。');
-    }
-    return;
-  }
-
-  try {
-    const success = vibrateFn.call(navigator, [40, 30, 40]);
-    const isSupported = typeof success === 'boolean' ? success : true;
-    vibrationPermissionGranted = isSupported;
-
-    if (isSupported) {
-      if (typeof window.showPhoneError === 'function') {
-        window.showPhoneError('振動をテストしました。もし振動しなければ、ブラウザの制限を確認してください。');
-      }
-    } else {
-      if (typeof window.showPhoneError === 'function') {
-        window.showPhoneError('振動を実行できませんでした。ブラウザ設定を確認してください。');
-      }
-    }
-
-    console.log('vibration test result', success);
-  } catch (error) {
-    console.error('vibration permission failed:', error);
-    if (typeof window.showPhoneError === 'function') {
-      window.showPhoneError('振動のテスト中にエラーが発生しました。');
-    }
-  }
-}
-
 function triggerPhoneVibration(speed) {
-  const vibrateFn = navigator.vibrate || null;
-  if (!vibrateFn || !vibrationPermissionGranted) {
+  if (!navigator.vibrate) {
     return;
   }
 
   const duration = 30 + Math.round(speed * 70);
   const pattern = [duration, 20, Math.max(10, duration - 10)];
-  try {
-    vibrateFn.call(navigator, pattern);
-  } catch (error) {
-    console.warn('vibrate call failed:', error);
-  }
+  navigator.vibrate(pattern);
 }
