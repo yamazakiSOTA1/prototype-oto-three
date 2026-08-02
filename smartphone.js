@@ -6,10 +6,11 @@ let currentAngle = 0;
 let currentSpeed = 0;
 let isMotionActive = false;
 let lastSlashTime = 0;
+let vibrationPermissionGranted = false;
 
 // tuning constants
-const SHAKE_THRESHOLD = 12; // acceleration magnitude threshold
-const COOLDOWN_MS = 800; // ms between allowed slashes
+const SHAKE_THRESHOLD = 8; // acceleration magnitude threshold
+const COOLDOWN_MS = 450; // ms between allowed slashes
 const MAX_SPEED = 1.5; // clamp for normalized speed
   // Create audio element and explicitly set src/load to improve diagnostics
   smartphoneAudio = new Audio();
@@ -161,6 +162,13 @@ const MAX_SPEED = 1.5; // clamp for normalized speed
         });
       }
 
+      const requestVibrationButton = document.getElementById('requestVibrationButton');
+      if (requestVibrationButton) {
+        requestVibrationButton.addEventListener('click', () => {
+          requestVibrationPermission();
+        });
+      }
+
       window.smartphoneUpdateVisual = (speed, angle) => { updatePhoneEffect(speed, angle); flashScreen(); };
       window.showPhoneError = showPhoneError;
     } catch (e) {
@@ -235,7 +243,7 @@ function handleDeviceMotion(event) {
 }
 
 function normalizeSpeed(magnitude) {
-  const raw = (magnitude - SHAKE_THRESHOLD) / 20;
+  const raw = Math.max(0, magnitude - SHAKE_THRESHOLD) / 15;
   return Math.min(MAX_SPEED, Math.max(0, raw));
 }
 
@@ -301,8 +309,31 @@ function simulateSlashDebug(angle, speed) {
   sendSlashEvent(angle, speed, Date.now());
 }
 
+function requestVibrationPermission() {
+  if (!('vibrate' in navigator)) {
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError('この端末では振動に対応していません。');
+    }
+    return;
+  }
+
+  try {
+    const success = navigator.vibrate(20);
+    vibrationPermissionGranted = true;
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError('振動を許可しました。次から斬撃時に振動します。');
+    }
+    console.log('vibration permission granted via user gesture', success);
+  } catch (error) {
+    console.error('vibration permission failed:', error);
+    if (typeof window.showPhoneError === 'function') {
+      window.showPhoneError('振動の許可に失敗しました。');
+    }
+  }
+}
+
 function triggerPhoneVibration(speed) {
-  if (!navigator.vibrate) {
+  if (!vibrationPermissionGranted || !navigator.vibrate) {
     return;
   }
 

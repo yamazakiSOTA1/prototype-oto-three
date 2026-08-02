@@ -13,6 +13,7 @@ let shakeAmount = 0;
 let lastReceivedTimestamp = 0;
 let pcAudio = null;
 let connectionStatusEl = null;
+let lastPlayedEventKey = null;
 
 function setConnectionStatus(message) {
   if (connectionStatusEl) {
@@ -93,12 +94,19 @@ function handleSlashEvent(eventData) {
     return;
   }
 
+  const eventKey = eventData.id || `${eventData.timestamp}-${eventData.angle}-${eventData.speed}`;
+  if (eventKey === lastPlayedEventKey) {
+    console.log('duplicate event ignored by key');
+    return;
+  }
+
   if (eventData.timestamp <= lastReceivedTimestamp) {
-    console.log('duplicate event ignored');
+    console.log('duplicate event ignored by timestamp');
     return;
   }
 
   lastReceivedTimestamp = eventData.timestamp;
+  lastPlayedEventKey = eventKey;
   flashAmount = 1;
   shakeAmount = 12;
   updatePcDebug(eventData);
